@@ -1,10 +1,13 @@
-node_modules/
-out/
-dist/
-release/
-.vite/
-*.log
+node_modules
+dist
 .env
-.DS_Store
-framey-action-log.jsonl
-framey-sessions/
+backend/.env
+backend/academia.db
+backend/__pycache__
+backend/.venv
+backend/.idea
+*.pyc
+
+# The default library ships in the repo (backend/library_assets/) so deployed
+# servers see it; edit it locally and commit. (Admin-uploaded content, when
+# added as a feature, should go in a separate gitignored folder.)

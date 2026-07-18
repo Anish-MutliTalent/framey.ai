@@ -1,140 +1,175 @@
-# Framey AI
+# Academia — School ERP / LMS
 
-> Professional video, from a single sentence — built natively inside Adobe After Effects.
+Dark, premium school management platform. FastAPI + SQLite backend, React + Tailwind frontend. Google OAuth only.
 
-Framey is an AI **copilot** for motion graphics. You describe the video you want in
-plain words — *"Hey Framey, make me a launch video for my product"* — and a team of
-specialized agents builds it inside After Effects the way a motion designer would:
-selecting layers, setting properties, animating, applying effects, and queuing renders.
+---
 
-The key difference from "AI video generators": **Framey doesn't generate pixels from
-scratch.** It drives the same industry-grade editor studios already trust, so every
-output is a real, editable `.aep` project file — not a black box.
+## Stack
 
-## The four quality layers
+| Layer | Tech |
+|---|---|
+| Backend | FastAPI, SQLAlchemy ORM, SQLite (`academia.db`) |
+| Auth | Google OAuth (ID token verification), JWT |
+| AI | Anthropic Claude (homework auto-detection) |
+| Frontend | React 18, TypeScript, Tailwind CSS v4, Vite |
+| Design | Inter UI, JetBrains Mono data, dark #0A0A0F base |
 
-1. **Native action** — every agent works through After Effects' own scripting & UI
-   pathways, exactly as a human would.
-2. **Deterministic replay** — every action is logged to `framey-action-log.jsonl` and
-   can be re-run against a fresh driver (`npm run replay`). A result is never a lucky
-   one-off.
-3. **Automated quality checks** — before finalizing, Framey validates timing, alignment,
-   and render integrity against professional standards.
-4. **You** — the project file stays fully open; a human can review, tweak, or override
-   any decision.
+---
 
-In Real AE mode the agent can also **write and run arbitrary ExtendScript** (the
-[AE-agent](AE-agent-main/) approach) for full control, reads a rich comp dump (layers,
-effects, keyframes, expressions, masks), and **checkpoints** project state so it can
-revert on failure.
+## Setup
 
-## The brain
+### 1. Google OAuth credentials
 
-Framey's agents are powered by a **MiniMax** model on **Fireworks AI** (OpenAI-compatible
-endpoint), using function-calling to drive the editor. A Fireworks API key is required.
+1. Go to [console.cloud.google.com](https://console.cloud.google.com)
+2. Create a project → APIs & Services → Credentials → OAuth 2.0 Client ID
+3. Application type: **Web application**
+4. Authorised JavaScript origins: `http://localhost:5173`
+5. Copy the Client ID
 
-## Quickstart
+### 2. Backend
 
 ```bash
-npm install
-npm run dev        # launches the Electron app
+cd backend
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
+
+pip install -r requirements.txt
 ```
 
-The AE driver defaults to the **Simulator** (no After Effects install needed). Add your
-**Fireworks API key** in Settings (or `.env`), type a prompt (or click a suggestion),
-and watch the agents build a real composition: a live timeline, an animated stage
-preview, the action stream, and a quality report.
+Edit `backend/.env`:
 
-## Three run modes (Settings ▸)
-
-| LLM | AE driver | What you get |
-|---|---|---|
-| **Fireworks · MiniMax** | **Simulator** | Real agent loop against the in-process comp model. No AE install needed. Needs a Fireworks API key. |
-| **Fireworks · MiniMax** | **Real AE** | Real agents driving a real running After Effects. Load `ae/driver.jsx` (see below). |
-
-Configure via the Settings panel or `.env` (copy `.env.example`):
-
-```ini
-FRAMEY_LLM=fireworks                 # always fireworks (MiniMax on Fireworks)
-FRAMEY_BASE_URL=https://api.fireworks.ai/inference/v1
-FRAMEY_API_KEY=your_key              # required
-FRAMEY_MODEL=accounts/fireworks/models/minimax-m3
-FRAMEY_AE_DRIVER=simulate            # simulate | extendscript
-FRAMEY_BRIDGE_PORT=49321
+```env
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-client-secret
+JWT_SECRET=change-me-to-a-long-random-secret
+ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-## Connecting real After Effects
+Seed the database with sample data:
 
-1. In Settings, set **After Effects driver → Real AE**.
-2. Open After Effects.
-3. **File ▸ Scripts ▸ Run Script File…** and pick `ae/driver.jsx`.
-
-The script connects to Framey over `127.0.0.1:49321`, executes each command in an
-undo group, and pushes the live comp state back. See [`ae/README_AE.md`](ae/README_AE.md).
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│ Renderer (React) — chat · live action stream · comp timeline │
-│   preview · quality report · settings                         │
-└──────────────▲───────────────────────────────────────────────┘
-               │ IPC (framey:event stream)
-┌──────────────┴───────────────────────────────────────────────┐
-│ Main (Electron) — AgentRuntime                                │
-│   • LLM: Fireworks (OpenAI-compatible) → MiniMax, tool-calling│
-│     loop + specialist delegation (cuts / motion / sound / qc) │
-│   • Tools → AECommand protocol + run_extendscript (model      │
-│     writes & runs arbitrary ExtendScript, like a human)       │
-│   • ActionLog (deterministic replay) · QualityChecks          │
-│   • Checkpoints (save / revert project state)                 │
-│   • AEDriver: Simulated (in-process) | ExtendScript (TCP)     │
-└──────────────┬───────────────────────────────────────────────┘
-               │ TCP bridge (newline JSON)
-       ┌───────┴────────┐
-       │ ae/driver.jsx   │  ← loaded inside After Effects
-       │ ExtendScript    │
-       └─────────────────┘
+```bash
+cd backend
+python seed.py
 ```
 
-### Project layout
+Start the API server:
 
-```
-src/
-  shared/protocol.ts        # AE command union + comp model + events (the contract)
-  main/
-    index.ts                # Electron entry
-    ipc.ts                  # renderer ↔ main IPC
-    bridge/
-      aeDriver.ts           # driver interface + factory
-      simulatedDriver.ts    # in-process AE model (no AE needed)
-      extendscriptDriver.ts # real AE over TCP
-      server.ts             # TCP bridge server
-    agent/
-      llm.ts                # Fireworks (OpenAI SDK) client
-      tools.ts              # native AE tool surface + dispatch
-      prompts.ts            # orchestrator + specialist prompts
-      runtime.ts            # agent loop, delegation, logging, QC
-      actionLog.ts          # JSONL log + replay
-      quality.ts            # automated quality checks
-      offlinePlanner.ts     # zero-credential deterministic build
-  preload/index.ts          # safe contextBridge API
-  renderer/                 # React UI (chat, action stream, comp preview, settings)
-ae/driver.jsx               # ExtendScript driver for real After Effects
-scripts/replay.ts           # npm run replay
+```bash
+uvicorn main:app --reload --port 8000
 ```
 
-## Scripts
+API docs available at `http://localhost:8000/docs`
 
-| Command | Description |
+### 3. Frontend
+
+```bash
+# In project root
+npm install   # or pnpm install
+```
+
+Edit `.env` in project root:
+
+```env
+VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+```
+
+```bash
+npm run dev
+```
+
+Open `http://localhost:5173`
+
+---
+
+## Roles
+
+| Role | Access |
 |---|---|
-| `npm run dev` | Launch the app with hot reload. |
-| `npm run build` | Build main + preload + renderer for production. |
-| `npm run typecheck` | Type-check main and renderer. |
-| `npm run replay` | Replay the last action log against a fresh simulator. |
+| `student` | Dashboard, Classroom, Diary, Timetable, Attendance, Reports, Announcements, Calendar |
+| `teacher` | Dashboard, Classroom (post), Attendance marking, Timetable, Gradebook, Reports, Announcements |
+| `class_teacher` | All teacher access + edit class timetable |
+| `coordinator` | Teacher access + admin panel (no tech config) |
+| `principal` | Coordinator access |
+| `tech_admin` | Full admin access: school config, user management, audit log |
 
-## Why this matters
+Users can hold multiple roles simultaneously.
 
-Every product, studio, and founder needs a launch video. Today the choice is slow and
-expensive (weeks of expert labor) or fast and forgettable (AI slop). Framey makes
-**professional the default** — the craft stays human, the labor becomes instant.
+---
+
+## First-time setup flow
+
+1. Admin creates users via `POST /api/admin/users` (or edit seed.py)
+2. Users log in with their school Google account — only pre-created emails are accepted
+3. Tech admin assigns users to classes/sections and configures timetable
+
+---
+
+## Sample seed accounts
+
+After running `python seed.py`, these email addresses are pre-registered (login with any Google account that uses these emails):
+
+| Email | Role |
+|---|---|
+| `tech@springfield.edu` | Tech Admin |
+| `principal@springfield.edu` | Principal |
+| `coordinator@springfield.edu` | Coordinator |
+| `alice@springfield.edu` | Teacher (Math) |
+| `bob@springfield.edu` | Teacher + Class Teacher (9A) |
+| `student1@springfield.edu` | Student (Emma Johnson, 9A) |
+| `student4@springfield.edu` | Student (Noah Wilson, 9B) |
+
+> Note: Google OAuth requires the actual Google account to use these emails. For local dev, update `seed.py` with your real Google email addresses, or the tech admin can update google_id in the DB after first login attempt.
+
+---
+
+## Project structure
+
+```
+Academia/
+├── backend/
+│   ├── main.py            # FastAPI app, auth routes
+│   ├── database.py        # SQLite engine + session
+│   ├── models.py          # All SQLAlchemy models
+│   ├── schemas.py         # Pydantic v2 schemas
+│   ├── auth.py            # Google OAuth + JWT + RBAC deps
+│   ├── seed.py            # Sample data seeder
+│   ├── requirements.txt
+│   ├── routers/
+│   │   ├── students.py    # Student dashboard, diary, marks, attendance
+│   │   ├── teachers.py    # Teacher dashboard, sections
+│   │   ├── admin.py       # Users, classes, subjects, tasks, audit
+│   │   ├── classroom.py   # Posts, comments, submissions
+│   │   ├── attendance.py  # Bulk mark, edit
+│   │   ├── timetable.py   # CRUD timetable entries
+│   │   ├── reports.py     # Gradebook, report generation
+│   │   ├── announcements.py
+│   │   └── calendar.py
+│   └── services/
+│       ├── ai_diary.py    # Claude API: homework detection
+│       └── grading.py     # Percentage / GPA / CBSE grading
+└── src/
+    └── app/
+        ├── App.tsx                    # Routes + role-based guards
+        ├── contexts/AuthContext.tsx   # Google OAuth + JWT state
+        ├── hooks/useApi.ts            # Authenticated fetch helper
+        ├── components/erp/
+        │   ├── Layout.tsx             # Sidebar + TopBar wrapper
+        │   ├── ERPSidebar.tsx         # Role-aware nav
+        │   └── TopBar.tsx
+        └── pages/
+            ├── ERPLogin.tsx
+            ├── student/               # 8 student pages
+            ├── teacher/               # 8 teacher pages
+            └── admin/                 # 10 admin pages
+```
+
+---
+
+## AI features
+
+When a teacher creates an `assignment` post, the backend calls Claude (`claude-haiku-4-5`) to detect whether the post is homework. If yes, `DiaryEntry` records are automatically created for every student in the section.
+
+Set `ANTHROPIC_API_KEY` in `backend/.env` to enable this. Without the key the service defaults to `False` (no auto-diary).

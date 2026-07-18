@@ -1,0 +1,8 @@
+{
+  "llm": "fireworks",
+  "baseURL": "https://api.fireworks.ai/inference/v1",
+  "apiKey": "fw_Y2joEyWbApH3BB8XuQ5bYu",
+  "model": "accounts/fireworks/models/minimax-m3",
+  "aeDriver": "extendscript",
+  "bridgePort": 49321
+}
